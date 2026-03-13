@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Vertical bar (left) + right-pointing triangle = mark in -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M3,4 L5,4 L5,20 L3,20 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M9,6 L19,12 L9,18 Z" />
+</vector>
