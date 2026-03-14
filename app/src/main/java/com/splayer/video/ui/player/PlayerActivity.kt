@@ -180,6 +180,7 @@ class PlayerActivity : AppCompatActivity() {
     private var bufferMode = BUFFER_MODE_STABLE // 버퍼링 모드 (안정/빠른시작)
     private var seekMode = SEEK_MODE_ACCURATE // 시크 모드 (정확/빠름)
     private var isSkipDirectionReversed = false // 스킵 방향 반전 (좌우 더블탭)
+    private var isWmvOptimized = true // WMV 최적화 (VLC 엔진 + 빠른 시크)
     private val prefs by lazy {
         getSharedPreferences("splayer_settings", Context.MODE_PRIVATE)
     }
@@ -380,6 +381,7 @@ class PlayerActivity : AppCompatActivity() {
         seekMode = prefs.getInt("seek_mode", SEEK_MODE_ACCURATE)
         useVlcEngine = prefs.getBoolean("use_vlc_engine", false)
         isSkipDirectionReversed = prefs.getBoolean("skip_direction_reversed", false)
+        isWmvOptimized = prefs.getBoolean("wmv_optimized", true)
 
         // 밝기/볼륨 인디케이터 초기화
         setupIndicators()
@@ -2149,6 +2151,7 @@ class PlayerActivity : AppCompatActivity() {
         val switchSound = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchSound)
         val switchStartMute = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchStartMute)
         val switchStartMaxBrightness = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchStartMaxBrightness)
+        val switchWmvOptimized = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchWmvOptimized)
         val spinnerSkipTime = dialogView.findViewById<Spinner>(R.id.spinnerSkipTime)
         val spinnerSensitivity = dialogView.findViewById<Spinner>(R.id.spinnerSensitivity)
         val switchSkipDirectionReversed = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchSkipDirectionReversed)
@@ -2238,6 +2241,7 @@ class PlayerActivity : AppCompatActivity() {
         switchBrightnessSwipe.isChecked = isBrightnessSwipeEnabled
         switchVolumeSwipe.isChecked = isVolumeSwipeEnabled
         switchContinuousPlay.isChecked = isContinuousPlayEnabled
+        switchWmvOptimized.isChecked = isWmvOptimized
 
         // 스킵 시간 스피너 설정
         val skipTimeOptions = arrayOf("⏩ 5초", "⏩ 10초", "⏩ 15초", "⏩ 20초", "⏩ 30초", "⏩ 60초")
@@ -2414,6 +2418,12 @@ class PlayerActivity : AppCompatActivity() {
         switchContinuousPlay.setOnCheckedChangeListener { _, isChecked ->
             isContinuousPlayEnabled = isChecked
             prefs.edit().putBoolean("continuous_play_enabled", isContinuousPlayEnabled).apply()
+        }
+
+        switchWmvOptimized.setOnCheckedChangeListener { _, isChecked ->
+            isWmvOptimized = isChecked
+            prefs.edit().putBoolean("wmv_optimized", isWmvOptimized).apply()
+            Toast.makeText(this, "WMV 최적화: ${if (isChecked) "ON" else "OFF"}\n다음 재생부터 적용됩니다", Toast.LENGTH_SHORT).show()
         }
 
         spinnerSkipTime.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -3486,8 +3496,9 @@ class PlayerActivity : AppCompatActivity() {
         availableSubtitles.clear()
         availableSubtitles.addAll(findSubtitles(videoUri))
 
-        // VLC 엔진 분기
-        if (useVlcEngine) {
+        // VLC 엔진 분기 (WMV 최적화 ON + WMV 파일이면 자동으로 VLC 사용)
+        val isWmvFile = videoUri.endsWith(".wmv", ignoreCase = true)
+        if (useVlcEngine || (isWmvOptimized && isWmvFile)) {
             initializeVlcPlayer(videoUri, actualStartPosition, videoTitle)
             return
         }
@@ -3573,9 +3584,9 @@ class PlayerActivity : AppCompatActivity() {
                     )
                 }
 
-                // 시크 파라미터 설정
+                // 시크 파라미터 설정 (WMV는 키프레임 간격이 넓어 NEXT_SYNC가 효율적)
                 exoPlayer.setSeekParameters(
-                    if (isTsFile || seekMode == SEEK_MODE_FAST) androidx.media3.exoplayer.SeekParameters.NEXT_SYNC
+                    if (isTsFile || isWmvFile || seekMode == SEEK_MODE_FAST) androidx.media3.exoplayer.SeekParameters.NEXT_SYNC
                     else androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC
                 )
 
@@ -3816,14 +3827,17 @@ class PlayerActivity : AppCompatActivity() {
                         if (!useVlcEngine && !isEngineFallback) {
                             Log.d("PlayerActivity", "ExoPlayer 재생 실패 → VLC 엔진으로 자동 전환")
                             isEngineFallback = true
+                            val isWmvFile = videoUri.endsWith(".wmv", ignoreCase = true)
                             runOnUiThread {
-                                android.widget.Toast.makeText(
-                                    this@PlayerActivity,
-                                    "VLC Mode",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).also { toast ->
-                                    toast.show()
-                                    android.os.Handler(mainLooper).postDelayed({ toast.cancel() }, 1000)
+                                if (!(isWmvOptimized && isWmvFile)) {
+                                    android.widget.Toast.makeText(
+                                        this@PlayerActivity,
+                                        "VLC Mode",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).also { toast ->
+                                        toast.show()
+                                        android.os.Handler(mainLooper).postDelayed({ toast.cancel() }, 1000)
+                                    }
                                 }
                                 fallbackToVlcEngine()
                             }
@@ -4944,7 +4958,14 @@ class PlayerActivity : AppCompatActivity() {
     /** 위치 이동 */
     private fun engineSeekTo(positionMs: Long) {
         if (useVlcEngine) {
-            vlcMediaPlayer?.time = positionMs
+            // WMV 최적화: 바이트 위치 기반 빠른 시크
+            val isWmv = currentVideoPath?.endsWith(".wmv", ignoreCase = true) == true
+            val duration = vlcMediaPlayer?.length ?: 0L
+            if (isWmvOptimized && isWmv && duration > 0) {
+                vlcMediaPlayer?.setPosition(positionMs.toFloat() / duration.toFloat(), true)
+            } else {
+                vlcMediaPlayer?.time = positionMs
+            }
             // VLC: engineSeekTo에서 캐스트 동기화 (ExoPlayer는 onPositionDiscontinuity에서 처리)
             syncCastSeek(positionMs)
         } else {
@@ -5450,6 +5471,8 @@ class PlayerActivity : AppCompatActivity() {
             DECODER_MODE_HW -> args.add("--avcodec-hw=any")
             DECODER_MODE_SW -> args.add("--avcodec-hw=none")
         }
+
+
 
         libVlc = LibVLC(this, args)
         vlcMediaPlayer = VlcMediaPlayer(libVlc!!)
