@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
+    <!-- 플러그인 패키지 조회 (Android 11+) -->
+    <queries>
+        <package android:name="com.splayer.video.plugin.converter" />
+    </queries>
+
     <application
         android:name=".SPlayerApplication"
         android:allowBackup="true"

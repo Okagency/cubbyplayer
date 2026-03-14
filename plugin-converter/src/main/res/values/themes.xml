@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Converter" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#1A1A2E</item>
+        <item name="colorPrimaryVariant">#16163A</item>
+        <item name="colorOnPrimary">#E0E0E0</item>
+        <item name="colorSecondary">#64B5F6</item>
+        <item name="colorOnSecondary">#1A1A2E</item>
+        <item name="android:colorBackground">#1A1A2E</item>
+        <item name="colorSurface">#252540</item>
+        <item name="colorOnSurface">#E0E0E0</item>
+        <item name="android:statusBarColor">#1A1A2E</item>
+        <item name="android:navigationBarColor">#1A1A2E</item>
+        <item name="android:windowBackground">@color/bg_primary</item>
+    </style>
+
+    <color name="bg_primary">#1A1A2E</color>
+    <color name="bg_surface">#252540</color>
+    <color name="bg_surface_light">#2D2D4A</color>
+    <color name="accent">#FF64B5F6</color>
+    <color name="text_primary">#E0E0E0</color>
+    <color name="text_secondary">#A0A0B0</color>
+</resources>

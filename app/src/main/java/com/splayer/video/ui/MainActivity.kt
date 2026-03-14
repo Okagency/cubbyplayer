@@ -128,30 +128,12 @@ class MainActivity : AppCompatActivity() {
             viewModel.loadVideos()
         }
 
-        toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_sort -> { showSortDialog(); true }
-                R.id.action_refresh -> { viewModel.loadVideos(); true }
-                R.id.action_settings -> { showSettingsDialog(); true }
-                R.id.action_split -> {
-                    startActivity(android.content.Intent(this, com.splayer.video.ui.split.VideoSplitActivity::class.java))
-                    true
-                }
-                R.id.action_merge -> {
-                    startActivity(android.content.Intent(this, com.splayer.video.ui.merge.VideoMergeActivity::class.java))
-                    true
-                }
-                R.id.action_replace -> {
-                    startActivity(android.content.Intent(this, com.splayer.video.ui.replace.VideoReplaceActivity::class.java))
-                    true
-                }
-                else -> false
-            }
-        }
+        setupMenuClickListener()
+        updateConverterMenuVisibility(toolbar.menu)
     }
 
     private fun setupViewModel() {
-        val factory = MainViewModelFactory(VideoRepository(contentResolver))
+        val factory = MainViewModelFactory(application, VideoRepository(contentResolver))
         viewModel = ViewModelProvider(this, factory)[MainViewModel::class.java]
 
         lifecycleScope.launch {
@@ -244,6 +226,11 @@ class MainActivity : AppCompatActivity() {
         toolbar.setNavigationOnClickListener(null)
         toolbar.menu.clear()
         menuInflater.inflate(R.menu.main_menu, toolbar.menu)
+        setupMenuClickListener()
+        updateConverterMenuVisibility(toolbar.menu)
+    }
+
+    private fun setupMenuClickListener() {
         toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_sort -> { showSortDialog(); true }
@@ -261,8 +248,36 @@ class MainActivity : AppCompatActivity() {
                     startActivity(android.content.Intent(this, com.splayer.video.ui.replace.VideoReplaceActivity::class.java))
                     true
                 }
+                R.id.action_convert -> {
+                    launchConverterPlugin()
+                    true
+                }
                 else -> false
             }
+        }
+    }
+
+    private fun isConverterPluginInstalled(): Boolean {
+        return try {
+            packageManager.getPackageInfo("com.splayer.video.plugin.converter", 0)
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    private fun updateConverterMenuVisibility(menu: android.view.Menu) {
+        menu.findItem(R.id.action_convert)?.isVisible = isConverterPluginInstalled()
+    }
+
+    private fun launchConverterPlugin() {
+        val intent = Intent("com.splayer.video.action.CONVERT").apply {
+            setPackage("com.splayer.video.plugin.converter")
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "포맷 변환 플러그인을 실행할 수 없습니다", Toast.LENGTH_SHORT).show()
         }
     }
 

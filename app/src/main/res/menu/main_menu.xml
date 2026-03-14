@@ -35,4 +35,10 @@
         android:title="패치"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_convert"
+        android:title="포맷 변환"
+        android:visible="false"
+        app:showAsAction="never" />
+
 </menu>

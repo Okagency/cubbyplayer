@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">큐플 포맷변환</string>
+    <string name="title_converter">포맷 변환</string>
+    <string name="label_source_file">소스 파일</string>
+    <string name="label_output_format">출력 포맷</string>
+    <string name="btn_select_file">파일 선택</string>
+    <string name="btn_convert">변환 시작</string>
+    <string name="btn_cancel">취소</string>
+    <string name="msg_converting">변환 중...</string>
+    <string name="msg_complete">변환 완료</string>
+    <string name="msg_failed">변환 실패</string>
+    <string name="msg_no_file">파일을 선택해주세요</string>
+</resources>

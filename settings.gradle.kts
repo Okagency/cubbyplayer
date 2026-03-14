@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "sPlayer"
 include(":app")
+include(":plugin-converter")

@@ -131,6 +131,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // 자막 관련 변수
     private var currentVideoPath: String? = null
+    private var currentVideoTitle: String = "Video"
     private var availableSubtitles = mutableListOf<SubtitleInfo>()
     private var currentSubtitleUri: Uri? = null
     private var embeddedSubtitleTracks = mutableListOf<TrackInfo>()
@@ -178,6 +179,7 @@ class PlayerActivity : AppCompatActivity() {
     private var decoderMode = DECODER_MODE_HW_PLUS // 디코더 모드 (HW/HW+/SW)
     private var bufferMode = BUFFER_MODE_STABLE // 버퍼링 모드 (안정/빠른시작)
     private var seekMode = SEEK_MODE_ACCURATE // 시크 모드 (정확/빠름)
+    private var isSkipDirectionReversed = false // 스킵 방향 반전 (좌우 더블탭)
     private val prefs by lazy {
         getSharedPreferences("splayer_settings", Context.MODE_PRIVATE)
     }
@@ -377,6 +379,7 @@ class PlayerActivity : AppCompatActivity() {
         bufferMode = prefs.getInt("buffer_mode", BUFFER_MODE_STABLE)
         seekMode = prefs.getInt("seek_mode", SEEK_MODE_ACCURATE)
         useVlcEngine = prefs.getBoolean("use_vlc_engine", false)
+        isSkipDirectionReversed = prefs.getBoolean("skip_direction_reversed", false)
 
         // 밝기/볼륨 인디케이터 초기화
         setupIndicators()
@@ -737,14 +740,14 @@ class PlayerActivity : AppCompatActivity() {
                 val leftHalf = screenWidth / 2f
 
                 when {
-                    // 좌측 - 뒤로 스킵
+                    // 좌측 더블탭
                     e.x < leftHalf -> {
-                        skipBackward()
+                        if (isSkipDirectionReversed) skipForward() else skipBackward()
                         return true
                     }
-                    // 우측 - 앞으로 스킵
+                    // 우측 더블탭
                     else -> {
-                        skipForward()
+                        if (isSkipDirectionReversed) skipBackward() else skipForward()
                         return true
                     }
                 }
@@ -2148,6 +2151,7 @@ class PlayerActivity : AppCompatActivity() {
         val switchStartMaxBrightness = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchStartMaxBrightness)
         val spinnerSkipTime = dialogView.findViewById<Spinner>(R.id.spinnerSkipTime)
         val spinnerSensitivity = dialogView.findViewById<Spinner>(R.id.spinnerSensitivity)
+        val switchSkipDirectionReversed = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchSkipDirectionReversed)
         val switchBrightnessSwipe = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchBrightnessSwipe)
         val switchVolumeSwipe = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchVolumeSwipe)
         val switchContinuousPlay = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchContinuousPlay)
@@ -2230,6 +2234,7 @@ class PlayerActivity : AppCompatActivity() {
         switchSound.isChecked = isSoundEnabled
         switchStartMute.isChecked = startWithMute
         switchStartMaxBrightness.isChecked = startWithMaxBrightness
+        switchSkipDirectionReversed.isChecked = isSkipDirectionReversed
         switchBrightnessSwipe.isChecked = isBrightnessSwipeEnabled
         switchVolumeSwipe.isChecked = isVolumeSwipeEnabled
         switchContinuousPlay.isChecked = isContinuousPlayEnabled
@@ -2352,6 +2357,16 @@ class PlayerActivity : AppCompatActivity() {
             dialog.dismiss()
         }
 
+        // 플러그인 섹션: 포맷 변환 (플러그인 설치 시에만 표시)
+        val layoutPluginSection = dialogView.findViewById<LinearLayout>(R.id.layoutPluginSection)
+        if (isConverterPluginInstalled()) {
+            layoutPluginSection?.visibility = View.VISIBLE
+            dialogView.findViewById<LinearLayout>(R.id.btnConvertVideo)?.setOnClickListener {
+                dialog.dismiss()
+                launchConverterWithCurrentVideo()
+            }
+        }
+
         // 이벤트 리스너 설정
         switchSound.setOnCheckedChangeListener { _, isChecked ->
             isSoundEnabled = isChecked
@@ -2376,6 +2391,12 @@ class PlayerActivity : AppCompatActivity() {
             // 최대밝기 OFF일 때만 밝기 스와이프 활성화
             isBrightnessSwipeEnabled = !startWithMaxBrightness
             switchBrightnessSwipe.isChecked = isBrightnessSwipeEnabled
+        }
+
+        // 스킵 방향 반전 스위치 리스너
+        switchSkipDirectionReversed.setOnCheckedChangeListener { _, isChecked ->
+            isSkipDirectionReversed = isChecked
+            prefs.edit().putBoolean("skip_direction_reversed", isSkipDirectionReversed).apply()
         }
 
         // 밝기 스와이프 스위치 리스너
@@ -3446,6 +3467,7 @@ class PlayerActivity : AppCompatActivity() {
     @UnstableApi
     private fun initializePlayer(videoUri: String, startPosition: Long, videoTitle: String = "Video") {
         currentVideoPath = videoUri
+        currentVideoTitle = videoTitle
 
         // 이전 종료 방식에 따라 재생 시작 위치 결정
         val exitType = prefs.getString("exit_type", "tap") ?: "tap"
@@ -3797,9 +3819,12 @@ class PlayerActivity : AppCompatActivity() {
                             runOnUiThread {
                                 android.widget.Toast.makeText(
                                     this@PlayerActivity,
-                                    "ExoPlayer 재생 실패, VLC로 재시도합니다",
+                                    "VLC Mode",
                                     android.widget.Toast.LENGTH_SHORT
-                                ).show()
+                                ).also { toast ->
+                                    toast.show()
+                                    android.os.Handler(mainLooper).postDelayed({ toast.cancel() }, 1000)
+                                }
                                 fallbackToVlcEngine()
                             }
                             return
@@ -3862,6 +3887,16 @@ class PlayerActivity : AppCompatActivity() {
                         engineSetVolume(if (isSoundEnabled) 1f else 0f)
                         isVolumeSwipeEnabled = isSoundEnabled
                         updateSoundToggleIcon(btn)
+                    }
+                }
+
+                // 스킵 방향 반전 토글 버튼 설정
+                binding.playerView.findViewById<ImageButton>(R.id.btnSkipDirectionToggle)?.let { btn ->
+                    updateSkipDirectionToggleIcon(btn)
+                    btn.setOnClickListener {
+                        isSkipDirectionReversed = !isSkipDirectionReversed
+                        prefs.edit().putBoolean("skip_direction_reversed", isSkipDirectionReversed).apply()
+                        updateSkipDirectionToggleIcon(btn)
                     }
                 }
 
@@ -4034,7 +4069,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun finish() {
-        super.finish()
+        finishAndRemoveTask()
     }
 
     override fun onDestroy() {
@@ -4186,6 +4221,9 @@ class PlayerActivity : AppCompatActivity() {
                 popup.menu.add(0, 3, order++, "회전")
                 popup.menu.add(0, 4, order++, "설정")
                 popup.menu.add(0, 6, order++, if (isCastingActive) "캐스트 리모컨" else "캐스트")
+                if (isConverterPluginInstalled()) {
+                    popup.menu.add(0, 7, order++, "포맷 변환")
+                }
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> { switchEngine(); true }
@@ -4194,6 +4232,7 @@ class PlayerActivity : AppCompatActivity() {
                         4 -> { showSubtitleDialog(); true }
                         5 -> true // 코덱 정보는 표시만
                         6 -> { if (isCastingActive) showCastRemoteDialog() else showCastDevicePickerDialog(); true }
+                        7 -> { launchConverterWithCurrentVideo(); true }
                         else -> false
                     }
                 }
@@ -4207,6 +4246,31 @@ class PlayerActivity : AppCompatActivity() {
             btnSettings?.visibility = View.VISIBLE
             btnCast?.visibility = View.VISIBLE
             btnOverflow.visibility = View.GONE
+        }
+    }
+
+    private fun isConverterPluginInstalled(): Boolean {
+        return try {
+            packageManager.getPackageInfo("com.splayer.video.plugin.converter", 0)
+            true
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    private fun launchConverterWithCurrentVideo() {
+        val videoUri = currentVideoPath ?: return
+        val uri = android.net.Uri.parse(videoUri)
+        val intent = android.content.Intent("com.splayer.video.action.CONVERT").apply {
+            setPackage("com.splayer.video.plugin.converter")
+            setDataAndType(uri, "video/*")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            putExtra("video_uri", videoUri)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "포맷 변환 플러그인을 실행할 수 없습니다", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -4231,9 +4295,8 @@ class PlayerActivity : AppCompatActivity() {
             // ExoPlayer → VLC: initializeVlcPlayer()에서 처리됨
         }
 
-        // 엔진 전환
+        // 엔진 전환 (현재 재생에서만 유효, 설정에는 반영하지 않음)
         useVlcEngine = !useVlcEngine
-        prefs.edit().putBoolean("use_vlc_engine", useVlcEngine).apply()
         isEngineFallback = false
 
         Log.d("PlayerActivity", "엔진 전환: ${if (useVlcEngine) "VLC" else "ExoPlayer"}, position=$position")
@@ -5282,9 +5345,8 @@ class PlayerActivity : AppCompatActivity() {
 
         // VLC로 전환 (설정은 변경하지 않음 - 이번 재생만 VLC 사용)
         useVlcEngine = true
-        val title = controllerRoot?.findViewById<TextView>(R.id.videoTitle)?.text?.toString() ?: "Video"
         Log.d("PlayerActivity", "VLC 폴백: uri=$videoUri, position=$position")
-        initializeVlcPlayer(videoUri, position, title)
+        initializeVlcPlayer(videoUri, position, currentVideoTitle)
     }
 
     /** 터치 영역 뷰 */
@@ -5351,6 +5413,16 @@ class PlayerActivity : AppCompatActivity() {
             if (isSoundEnabled) R.drawable.ic_volume_on
             else R.drawable.ic_volume_off
         )
+    }
+
+    private fun updateSkipDirectionToggleIcon(btn: ImageButton) {
+        if (isSkipDirectionReversed) {
+            btn.setColorFilter(android.graphics.Color.parseColor("#FF64B5F6"))
+            btn.alpha = 1.0f
+        } else {
+            btn.setColorFilter(android.graphics.Color.WHITE)
+            btn.alpha = 0.4f
+        }
     }
 
     // ==================== VLC 플레이어 초기화 ====================
@@ -5523,6 +5595,16 @@ class PlayerActivity : AppCompatActivity() {
                 engineSetVolume(if (isSoundEnabled) 1f else 0f)
                 isVolumeSwipeEnabled = isSoundEnabled
                 updateSoundToggleIcon(btn)
+            }
+        }
+
+        // 스킵 방향 반전 토글 버튼
+        controller.findViewById<ImageButton>(R.id.btnSkipDirectionToggle)?.let { btn ->
+            updateSkipDirectionToggleIcon(btn)
+            btn.setOnClickListener {
+                isSkipDirectionReversed = !isSkipDirectionReversed
+                prefs.edit().putBoolean("skip_direction_reversed", isSkipDirectionReversed).apply()
+                updateSkipDirectionToggleIcon(btn)
             }
         }
 
