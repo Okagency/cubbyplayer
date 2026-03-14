@@ -28,6 +28,9 @@ class MainViewModel(
     private val _sortMode = MutableStateFlow(SortMode.DATE_MODIFIED)
     val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
 
+    private val _sortAscending = MutableStateFlow(false)
+    val sortAscending: StateFlow<Boolean> = _sortAscending.asStateFlow()
+
     init {
         Log.d(TAG, "MainViewModel initialized")
         loadVideos()
@@ -49,7 +52,7 @@ class MainViewModel(
                     Log.w(TAG, "  3. MediaStore query failed")
                 }
 
-                _videos.value = sortVideos(videoList, _sortMode.value)
+                _videos.value = sortVideos(videoList, _sortMode.value, _sortAscending.value)
                 Log.d(TAG, "Videos sorted and emitted: ${_videos.value.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ ERROR loading videos", e)
@@ -64,17 +67,23 @@ class MainViewModel(
 
     fun setSortMode(mode: SortMode) {
         _sortMode.value = mode
-        _videos.value = sortVideos(_videos.value, mode)
+        _videos.value = sortVideos(_videos.value, mode, _sortAscending.value)
     }
 
-    private fun sortVideos(videos: List<Video>, mode: SortMode): List<Video> {
-        return when (mode) {
+    fun setSortAscending(ascending: Boolean) {
+        _sortAscending.value = ascending
+        _videos.value = sortVideos(_videos.value, _sortMode.value, ascending)
+    }
+
+    private fun sortVideos(videos: List<Video>, mode: SortMode, ascending: Boolean = false): List<Video> {
+        val sorted = when (mode) {
             SortMode.NAME -> videos.sortedBy { it.displayName }
-            SortMode.DATE_ADDED -> videos.sortedByDescending { it.dateAdded }
-            SortMode.DATE_MODIFIED -> videos.sortedByDescending { it.dateModified }
-            SortMode.SIZE -> videos.sortedByDescending { it.size }
-            SortMode.DURATION -> videos.sortedByDescending { it.duration }
+            SortMode.DATE_ADDED -> videos.sortedBy { it.dateAdded }
+            SortMode.DATE_MODIFIED -> videos.sortedBy { it.dateModified }
+            SortMode.SIZE -> videos.sortedBy { it.size }
+            SortMode.DURATION -> videos.sortedBy { it.duration }
         }
+        return if (ascending) sorted else sorted.reversed()
     }
 
     enum class SortMode {

@@ -4,10 +4,10 @@
     android:height="20dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Left-pointing triangle + vertical bar (right) = mark out -->
+    <!-- Right-pointing triangle + vertical bar (right) = mark out -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M15,6 L5,12 L15,18 Z" />
+        android:pathData="M5,6 L15,12 L5,18 Z" />
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M19,4 L21,4 L21,20 L19,20 Z" />

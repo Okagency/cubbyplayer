@@ -33,6 +33,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.core.view.GestureDetectorCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -110,6 +112,7 @@ class PlayerActivity : AppCompatActivity() {
     private var positionUpdateJob: kotlinx.coroutines.Job? = null // 가상 타임라인 위치 업데이트용 Job
     private var lastVirtualPosition = -1L // 마지막 업데이트된 가상 위치
     private var lastVirtualDuration = -1L // 마지막 업데이트된 가상 총 시간
+    private var seekSuppressUntil = 0L // seek 후 positionUpdater 억제 시각 (SystemClock)
     private var currentGestureMode: GestureMode? = null // 현재 제스처 모드
     private var lastSeekTime = 0L // 마지막 seek 호출 시간
     private var lastSeekPosition = 0L // 마지막 seek 위치
@@ -2286,8 +2289,10 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         // 내장 자막 스피너 설정
+        val dividerEmbeddedSubtitle = dialogView.findViewById<View>(R.id.dividerEmbeddedSubtitle)
         if (embeddedSubtitleTracks.isNotEmpty()) {
             layoutEmbeddedSubtitles.visibility = View.VISIBLE
+            dividerEmbeddedSubtitle?.visibility = View.VISIBLE
 
             // 자막 옵션 생성 ("자막 끄기" + 각 자막 트랙)
             val subtitleOptions = mutableListOf<String>()
@@ -2326,14 +2331,26 @@ class PlayerActivity : AppCompatActivity() {
             }
         } else {
             layoutEmbeddedSubtitles.visibility = View.GONE
+            dividerEmbeddedSubtitle?.visibility = View.GONE
         }
 
-        // 다이얼로그 생성 (버튼에서 참조하기 위해 먼저 생성)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("⚙️ 설정")
-            .setView(dialogView)
-            .setNegativeButton("닫기", null)
-            .create()
+        // BottomSheetDialog 생성
+        val dialog = BottomSheetDialog(this, com.google.android.material.R.style.Theme_Design_BottomSheetDialog)
+        dialog.setContentView(dialogView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            navigationBarColor = android.graphics.Color.parseColor("#1A1A2E")
+        }
+        dialog.behavior.apply {
+            state = BottomSheetBehavior.STATE_EXPANDED
+            peekHeight = (resources.displayMetrics.heightPixels * 0.8).toInt()
+            skipCollapsed = true
+        }
+
+        // 닫기 버튼
+        dialogView.findViewById<ImageButton>(R.id.btnCloseSettings)?.setOnClickListener {
+            dialog.dismiss()
+        }
 
         // 이벤트 리스너 설정
         switchSound.setOnCheckedChangeListener { _, isChecked ->
@@ -2465,48 +2482,52 @@ class PlayerActivity : AppCompatActivity() {
         val segments = segmentManager.getSegmentsForFile(fileName).toMutableList()
 
         if (segments.isEmpty()) {
-            AlertDialog.Builder(this)
-                .setTitle("구간 리스트")
-                .setMessage("현재 파일에 대한 저장된 구간이 없습니다.")
-                .setPositiveButton("확인", null)
-                .show()
+            android.widget.Toast.makeText(this, "저장된 구간이 없습니다.", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
-        // RecyclerView를 위한 레이아웃 생성
-        val recyclerView = androidx.recyclerview.widget.RecyclerView(this).apply {
-            layoutParams = android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@PlayerActivity)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_segment_list, null)
+        val titleView = dialogView.findViewById<android.widget.TextView>(R.id.tvSegmentListTitle)
+        val recyclerView = dialogView.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvSegmentList)
+
+        titleView.text = "구간 리스트 (총 ${segments.size}개)"
+        recyclerView.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+
+        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(
+            this, com.google.android.material.R.style.Theme_Design_BottomSheetDialog
+        )
+        dialog.setContentView(dialogView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            navigationBarColor = android.graphics.Color.parseColor("#1A1A2E")
+        }
+        dialog.behavior.apply {
+            state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            skipCollapsed = true
         }
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("구간 리스트 (총 ${segments.size}개)")
-            .setView(recyclerView)
-            .setPositiveButton("전체 삭제") { _, _ ->
-                AlertDialog.Builder(this)
-                    .setTitle("구간 전체 삭제")
-                    .setMessage("이 파일의 모든 구간을 삭제하시겠습니까?")
-                    .setPositiveButton("삭제") { _, _ ->
-                        segmentManager.deleteAllSegmentsForFile(fileName)
-                        // 구간 재생이 활성화되어 있으면 비활성화
-                        if (isSegmentPlaybackEnabled) {
-                            isSegmentPlaybackEnabled = false
-                            updateSegmentPlaybackToggleUI()
-                        }
-                        android.widget.Toast.makeText(
-                            this,
-                            "모든 구간이 삭제되었습니다.",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+        // 닫기 버튼
+        dialogView.findViewById<android.widget.ImageButton>(R.id.btnCloseSegmentDialog)?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        // 전체 삭제 버튼
+        dialogView.findViewById<android.widget.Button>(R.id.btnDeleteAllSegments)?.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("구간 전체 삭제")
+                .setMessage("이 파일의 모든 구간을 삭제하시겠습니까?")
+                .setPositiveButton("삭제") { _, _ ->
+                    segmentManager.deleteAllSegmentsForFile(fileName)
+                    if (isSegmentPlaybackEnabled) {
+                        isSegmentPlaybackEnabled = false
+                        updateSegmentPlaybackToggleUI()
                     }
-                    .setNegativeButton("취소", null)
-                    .show()
-            }
-            .setNegativeButton("닫기", null)
-            .create()
+                    dialog.dismiss()
+                    android.widget.Toast.makeText(this, "모든 구간이 삭제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("취소", null)
+                .show()
+        }
 
         val adapter = com.splayer.video.ui.adapter.SegmentAdapter(
             segments = segments,
@@ -2560,17 +2581,12 @@ class PlayerActivity : AppCompatActivity() {
 
                         if (segments.isEmpty()) {
                             dialog.dismiss()
-                            android.widget.Toast.makeText(
-                                this,
-                                "모든 구간이 삭제되었습니다.",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
+                            android.widget.Toast.makeText(this, "모든 구간이 삭제되었습니다.", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
-                            dialog.setTitle("구간 리스트 (총 ${segments.size}개)")
+                            titleView.text = "구간 리스트 (총 ${segments.size}개)"
                             recyclerView.adapter?.notifyDataSetChanged()
                         }
 
-                        // 구간 재생이 활성화되어 있으면 목록 업데이트
                         if (isSegmentPlaybackEnabled) {
                             loadSegmentsForCurrentFile()
                         }
@@ -2579,27 +2595,18 @@ class PlayerActivity : AppCompatActivity() {
                     .show()
             },
             onItemClick = { position ->
-                // 다이얼로그 닫기
                 dialog.dismiss()
 
-                // 해당 구간만 반복 재생
                 val selectedSegment = segments[position]
                 currentSegments = mutableListOf(selectedSegment)
                 currentSegmentIndex = 0
                 isSegmentPlaybackEnabled = true
 
-                // 구간 시작 위치로 이동하고 재생
                 engineSeekTo(selectedSegment.startTime)
                 engineSetPlayWhenReady(true)
-
-                // 순번 표시 업데이트
                 updateSegmentSequenceDisplay()
 
-                android.widget.Toast.makeText(
-                    this,
-                    "${selectedSegment.sequence}번 구간 반복 재생",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                android.widget.Toast.makeText(this, "${selectedSegment.sequence}번 구간 반복 재생", android.widget.Toast.LENGTH_SHORT).show()
             }
         )
 
@@ -3937,7 +3944,7 @@ class PlayerActivity : AppCompatActivity() {
                 updateSegmentButtonsVisibility()
 
                 // 시크바 미리보기 리스너 설정
-                binding.playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(R.id.exo_progress)?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
+                binding.playerView.findViewById<SegmentTimeBar>(R.id.exo_progress)?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
                     override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) {
                         // 스크러빙 시작 (연속 시크 시 재생 상태 유지)
                         if (!isSeeking) {
@@ -3950,33 +3957,24 @@ class PlayerActivity : AppCompatActivity() {
                     }
 
                     override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {
-                        // 가상 타임라인 모드: 가상 위치를 실제 위치로 변환
-                        val (segmentIndex, actualPosition) = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-                            virtualToActualPosition(position)
+                        // 구간 모드: 로컬 위치를 실제 위치로 변환
+                        val actualPosition = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty() && currentSegmentIndex < currentSegments.size) {
+                            currentSegments[currentSegmentIndex].startTime + position
                         } else {
-                            Pair(currentSegmentIndex, position)
+                            position
                         }
-                        // 스크러빙 중 - 미리보기 표시
                         showSeekPreviewForControlBar(actualPosition)
                     }
 
                     override fun onScrubStop(timeBar: androidx.media3.ui.TimeBar, position: Long, canceled: Boolean) {
-                        // 가상 타임라인 모드: 가상 위치를 실제 위치와 구간 인덱스로 변환
-                        val (segmentIndex, actualPosition) = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-                            virtualToActualPosition(position)
+                        // 구간 모드: 로컬 위치를 실제 위치로 변환
+                        val actualPosition = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty() && currentSegmentIndex < currentSegments.size) {
+                            currentSegments[currentSegmentIndex].startTime + position
                         } else {
-                            Pair(currentSegmentIndex, position)
+                            position
                         }
 
-                        // 스크러빙 종료
                         if (!canceled) {
-                            if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-                                // 구간이 변경되었으면 currentSegmentIndex 업데이트
-                                if (segmentIndex != currentSegmentIndex) {
-                                    currentSegmentIndex = segmentIndex
-                                    updateSegmentSequenceDisplay()
-                                }
-                            }
                             exoPlayer.seekTo(actualPosition)
                             syncCastSeek(actualPosition)
                         }
@@ -4036,10 +4034,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun finish() {
-        if (externalVideoUri != null) {
-            finishAndRemoveTask()
-            return
-        }
         super.finish()
     }
 
@@ -4192,7 +4186,6 @@ class PlayerActivity : AppCompatActivity() {
                 popup.menu.add(0, 3, order++, "회전")
                 popup.menu.add(0, 4, order++, "설정")
                 popup.menu.add(0, 6, order++, if (isCastingActive) "캐스트 리모컨" else "캐스트")
-                popup.menu.add(0, 7, order++, "비디오 합치기")
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> { switchEngine(); true }
@@ -4201,7 +4194,6 @@ class PlayerActivity : AppCompatActivity() {
                         4 -> { showSubtitleDialog(); true }
                         5 -> true // 코덱 정보는 표시만
                         6 -> { if (isCastingActive) showCastRemoteDialog() else showCastDevicePickerDialog(); true }
-                        7 -> { launchVideoPicker(); true }
                         else -> false
                     }
                 }
@@ -4660,32 +4652,35 @@ class PlayerActivity : AppCompatActivity() {
         lastVirtualPosition = -1L
         lastVirtualDuration = -1L
 
-        if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-            val virtualDuration = getVirtualDuration()
+        // SegmentTimeBar의 외부 업데이트 차단 설정
+        val root0 = controllerRoot
+        val segTimeBar = root0?.findViewById<SegmentTimeBar>(R.id.exo_progress)
+        segTimeBar?.blockExternalUpdates = (isSegmentPlaybackEnabled && currentSegments.isNotEmpty())
 
+        if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
             positionUpdateJob = lifecycleScope.launch(Dispatchers.Main) {
                 while (isActive) {
-                    if (!isSeeking) {  // 시크 중이 아닐 때만 업데이트
+                    if (!isSeeking && currentSegmentIndex < currentSegments.size) {
+                        val segment = currentSegments[currentSegmentIndex]
+                        val segmentDuration = segment.endTime - segment.startTime
                         val actualPosition = enginePosition
-                        val virtualPosition = actualToVirtualPosition(actualPosition)
+                        val localPosition = (actualPosition - segment.startTime).coerceIn(0, segmentDuration)
 
                         val root = controllerRoot ?: continue
                         root.post {
-                            val timeBar = root.findViewById<androidx.media3.ui.DefaultTimeBar>(R.id.exo_progress)
-                            val positionView = root.findViewById<TextView>(R.id.exo_position)
-                            val durationView = root.findViewById<TextView>(R.id.exo_duration)
+                            val timeBar = root.findViewById<SegmentTimeBar>(R.id.exo_progress)
+                            val positionView = root.findViewById<TextView>(R.id.player_position)
+                            val durationView = root.findViewById<TextView>(R.id.player_duration)
 
-                            // 가상 타임라인 값으로 덮어쓰기
-                            timeBar?.setDuration(virtualDuration)
-                            timeBar?.setPosition(virtualPosition)
-                            positionView?.text = formatTime(virtualPosition)
-                            durationView?.text = formatTime(virtualDuration)
+                            // forceSet으로 ExoPlayer 차단을 우회하여 구간 값 설정
+                            timeBar?.forceSetDuration(segmentDuration)
+                            timeBar?.forceSetPosition(localPosition)
+                            positionView?.text = formatTime(localPosition)
+                            durationView?.text = formatTime(segmentDuration)
                         }
-
-                        lastVirtualPosition = virtualPosition
                     }
 
-                    delay(50) // 50ms마다 업데이트 (매우 부드럽게)
+                    delay(50)
                 }
             }
         } else {
@@ -4698,19 +4693,18 @@ class PlayerActivity : AppCompatActivity() {
                         val bufferedPosition = if (useVlcEngine) currentPosition else player?.bufferedPosition ?: 0L
 
                         val root = controllerRoot
-                        val timeBar = root?.findViewById<androidx.media3.ui.DefaultTimeBar>(R.id.exo_progress)
+                        val timeBar = root?.findViewById<SegmentTimeBar>(R.id.exo_progress)
                         timeBar?.setDuration(duration)
                         timeBar?.setPosition(currentPosition)
                         timeBar?.setBufferedPosition(bufferedPosition)
 
-                        if (useVlcEngine) {
-                            val positionView = root?.findViewById<TextView>(R.id.exo_position)
-                            val durationView = root?.findViewById<TextView>(R.id.exo_duration)
-                            positionView?.text = formatTime(currentPosition)
-                            durationView?.text = formatTime(duration)
-                        }
+                        // ID를 exo_ 에서 변경했으므로 항상 수동 업데이트
+                        val positionView = root?.findViewById<TextView>(R.id.player_position)
+                        val durationView = root?.findViewById<TextView>(R.id.player_duration)
+                        positionView?.text = formatTime(currentPosition)
+                        durationView?.text = formatTime(duration)
                     }
-                    delay(50) // 50ms마다 업데이트 (부드럽게)
+                    delay(50)
                 }
             }
         }
@@ -4779,12 +4773,14 @@ class PlayerActivity : AppCompatActivity() {
                         if (currentSegmentIndex < currentSegments.size) {
                             // 다음 구간 재생
                             val nextSegment = currentSegments[currentSegmentIndex]
+                            seekSuppressUntil = android.os.SystemClock.uptimeMillis() + 300
                             engineSeekTo(nextSegment.startTime)
                             updateSegmentSequenceDisplay()
                         } else {
                             // 모든 구간 재생 완료 - 처음부터 다시
                             currentSegmentIndex = 0
                             val firstSegment = currentSegments[0]
+                            seekSuppressUntil = android.os.SystemClock.uptimeMillis() + 300
                             engineSeekTo(firstSegment.startTime)
                             updateSegmentSequenceDisplay()
                         }
@@ -5554,8 +5550,8 @@ class PlayerActivity : AppCompatActivity() {
             if (isCastingActive) showCastRemoteDialog() else showCastDevicePickerDialog()
         }
 
-        // 시크바 (DefaultTimeBar)
-        val timeBar = controller.findViewById<androidx.media3.ui.DefaultTimeBar>(R.id.exo_progress)
+        // 시크바 (SegmentTimeBar)
+        val timeBar = controller.findViewById<SegmentTimeBar>(R.id.exo_progress)
         timeBar?.addListener(object : androidx.media3.ui.TimeBar.OnScrubListener {
             override fun onScrubStart(timeBar: androidx.media3.ui.TimeBar, position: Long) {
                 if (!isSeeking) {
@@ -5567,25 +5563,21 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onScrubMove(timeBar: androidx.media3.ui.TimeBar, position: Long) {
-                val (_, actualPosition) = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-                    virtualToActualPosition(position)
+                val actualPosition = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty() && currentSegmentIndex < currentSegments.size) {
+                    currentSegments[currentSegmentIndex].startTime + position
                 } else {
-                    Pair(currentSegmentIndex, position)
+                    position
                 }
                 showSeekPreviewForVlc(actualPosition)
             }
 
             override fun onScrubStop(timeBar: androidx.media3.ui.TimeBar, position: Long, canceled: Boolean) {
-                val (segmentIndex, actualPosition) = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty()) {
-                    virtualToActualPosition(position)
+                val actualPosition = if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty() && currentSegmentIndex < currentSegments.size) {
+                    currentSegments[currentSegmentIndex].startTime + position
                 } else {
-                    Pair(currentSegmentIndex, position)
+                    position
                 }
                 if (!canceled) {
-                    if (isSegmentPlaybackEnabled && currentSegments.isNotEmpty() && segmentIndex != currentSegmentIndex) {
-                        currentSegmentIndex = segmentIndex
-                        updateSegmentSequenceDisplay()
-                    }
                     engineSeekTo(actualPosition)
                 }
                 hideSeekPreview()

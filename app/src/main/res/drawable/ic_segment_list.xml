@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 3-line list with play triangles -->
+    <!-- Line 1 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M3,5 L5,5 L5,7 L3,7 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,5 L21,5 L21,7 L7,7 Z" />
+    <!-- Line 2 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M3,11 L5,11 L5,13 L3,13 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,11 L21,11 L21,13 L7,13 Z" />
+    <!-- Line 3 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M3,17 L5,17 L5,19 L3,19 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7,17 L21,17 L21,19 L7,19 Z" />
+</vector>

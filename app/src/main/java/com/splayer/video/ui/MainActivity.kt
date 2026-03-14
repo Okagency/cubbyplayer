@@ -132,6 +132,7 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.action_sort -> { showSortDialog(); true }
                 R.id.action_refresh -> { viewModel.loadVideos(); true }
+                R.id.action_settings -> { showSettingsDialog(); true }
                 R.id.action_split -> {
                     startActivity(android.content.Intent(this, com.splayer.video.ui.split.VideoSplitActivity::class.java))
                     true
@@ -247,6 +248,7 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.action_sort -> { showSortDialog(); true }
                 R.id.action_refresh -> { viewModel.loadVideos(); true }
+                R.id.action_settings -> { showSettingsDialog(); true }
                 R.id.action_split -> {
                     startActivity(android.content.Intent(this, com.splayer.video.ui.split.VideoSplitActivity::class.java))
                     true
@@ -267,13 +269,70 @@ class MainActivity : AppCompatActivity() {
     private fun showSortDialog() {
         val sortLabels = arrayOf("이름", "추가 날짜", "수정 날짜", "크기", "재생시간")
         val sortModes = MainViewModel.SortMode.values()
+        val currentMode = viewModel.sortMode.value
+        val currentAscending = viewModel.sortAscending.value
 
-        AlertDialog.Builder(this)
-            .setTitle("정렬")
-            .setItems(sortLabels) { _, which ->
-                viewModel.setSortMode(sortModes[which])
+        val dialogView = layoutInflater.inflate(R.layout.dialog_sort, null)
+        val sortModeContainer = dialogView.findViewById<android.widget.LinearLayout>(R.id.sortModeContainer)
+        val sortOrderContainer = dialogView.findViewById<android.widget.LinearLayout>(R.id.sortOrderContainer)
+
+        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(
+            this, com.google.android.material.R.style.Theme_Design_BottomSheetDialog
+        )
+        dialog.setContentView(dialogView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            navigationBarColor = android.graphics.Color.parseColor("#1A1A2E")
+        }
+        dialog.behavior.apply {
+            state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            skipCollapsed = true
+        }
+
+        // 닫기 버튼
+        dialogView.findViewById<android.widget.ImageButton>(R.id.btnCloseSortDialog)?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        // 정렬 기준 항목 추가
+        val currentIndex = sortModes.indexOf(currentMode)
+        sortLabels.forEachIndexed { index, label ->
+            val isSelected = index == currentIndex
+            val item = TextView(this).apply {
+                text = if (isSelected) "$label  ✓" else label
+                textSize = 15f
+                setTextColor(android.graphics.Color.parseColor(if (isSelected) "#64B5F6" else "#E0E0E0"))
+                setPadding(40, 30, 40, 30)
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_settings_card)?.constantState?.newDrawable()?.mutate()
+                background?.alpha = 0
+                setOnClickListener {
+                    viewModel.setSortMode(sortModes[index])
+                    dialog.dismiss()
+                    showSortDialog()
+                }
             }
-            .show()
+            sortModeContainer.addView(item)
+        }
+
+        // 정렬 순서 항목 추가
+        val orderLabels = arrayOf("오름차순", "내림차순")
+        orderLabels.forEachIndexed { index, label ->
+            val isSelected = if (index == 0) currentAscending else !currentAscending
+            val item = TextView(this).apply {
+                text = if (isSelected) "$label  ✓" else label
+                textSize = 15f
+                setTextColor(android.graphics.Color.parseColor(if (isSelected) "#64B5F6" else "#E0E0E0"))
+                setPadding(40, 30, 40, 30)
+                setOnClickListener {
+                    viewModel.setSortAscending(index == 0)
+                    dialog.dismiss()
+                    showSortDialog()
+                }
+            }
+            sortOrderContainer.addView(item)
+        }
+
+        dialog.show()
     }
 
     // =============================================
@@ -493,5 +552,220 @@ class MainActivity : AppCompatActivity() {
         if (::viewModel.isInitialized) {
             viewModel.loadVideos()
         }
+    }
+
+    private fun showSettingsDialog() {
+        val prefs = getSharedPreferences("splayer_settings", MODE_PRIVATE)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_settings, null)
+
+        // 컴포넌트 초기화
+        val spinnerPlayerEngine = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerPlayerEngine)
+        val switchSound = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchSound)
+        val switchStartMute = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchStartMute)
+        val switchStartMaxBrightness = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchStartMaxBrightness)
+        val spinnerSkipTime = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerSkipTime)
+        val spinnerSensitivity = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerSensitivity)
+        val switchBrightnessSwipe = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchBrightnessSwipe)
+        val switchVolumeSwipe = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchVolumeSwipe)
+        val switchContinuousPlay = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchContinuousPlay)
+        val spinnerBufferMode = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerBufferMode)
+        val spinnerSeekMode = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerSeekMode)
+        val spinnerCastMode = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerCastMode)
+
+        // 내장 자막 - 메인화면에서는 숨김
+        dialogView.findViewById<View>(R.id.layoutEmbeddedSubtitles)?.visibility = View.GONE
+
+        // 구간 재생 관리
+        val segmentManager = com.splayer.video.util.SegmentManager(this)
+        val editSegmentSavePath = dialogView.findViewById<android.widget.EditText>(R.id.editSegmentSavePath)
+        val editSegmentFilePath = dialogView.findViewById<android.widget.EditText>(R.id.editSegmentFilePath)
+
+        val currentSavePath = prefs.getString("segment_save_path", "/storage/emulated/0/Movies") ?: "/storage/emulated/0/Movies"
+        editSegmentSavePath.setText(currentSavePath)
+        editSegmentFilePath.setText(segmentManager.getSegmentFilePath())
+
+        editSegmentSavePath.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                prefs.edit().putString("segment_save_path", s.toString()).apply()
+            }
+        })
+
+        // 플레이어 엔진
+        val engineOptions = arrayOf("ExoPlayer", "VLC")
+        val engineAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, engineOptions)
+        engineAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerPlayerEngine.adapter = engineAdapter
+        spinnerPlayerEngine.setSelection(if (prefs.getBoolean("use_vlc_engine", false)) 1 else 0)
+        spinnerPlayerEngine.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putBoolean("use_vlc_engine", position == 1).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 현재 설정값 적용
+        switchSound.isChecked = prefs.getBoolean("sound_enabled", true)
+        switchStartMute.isChecked = prefs.getBoolean("start_with_mute", false)
+        switchStartMaxBrightness.isChecked = prefs.getBoolean("start_with_max_brightness", false)
+        switchBrightnessSwipe.isChecked = prefs.getBoolean("brightness_swipe_enabled", true)
+        switchVolumeSwipe.isChecked = prefs.getBoolean("volume_swipe_enabled", true)
+        switchContinuousPlay.isChecked = prefs.getBoolean("continuous_play_enabled", false)
+
+        // 스위치 리스너
+        switchSound.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("sound_enabled", isChecked).apply()
+            switchVolumeSwipe.isChecked = isChecked
+        }
+        switchStartMute.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("start_with_mute", isChecked).apply()
+        }
+        switchStartMaxBrightness.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("start_with_max_brightness", isChecked).apply()
+            switchBrightnessSwipe.isChecked = !isChecked
+        }
+        switchBrightnessSwipe.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("brightness_swipe_enabled", isChecked).apply()
+        }
+        switchVolumeSwipe.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("volume_swipe_enabled", isChecked).apply()
+        }
+        switchContinuousPlay.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("continuous_play_enabled", isChecked).apply()
+        }
+
+        // 스킵 시간
+        val skipTimeOptions = arrayOf("5초", "10초", "15초", "20초", "30초", "60초")
+        val skipTimeValues = arrayOf(5, 10, 15, 20, 30, 60)
+        val skipTimeAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, skipTimeOptions)
+        skipTimeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSkipTime.adapter = skipTimeAdapter
+        val currentSkip = prefs.getInt("skip_seconds", 10)
+        spinnerSkipTime.setSelection(skipTimeValues.indexOf(currentSkip).let { if (it == -1) 1 else it })
+        spinnerSkipTime.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt("skip_seconds", skipTimeValues[position]).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 스와이프 민감도
+        val sensitivityOptions = (1..20).map { level ->
+            when {
+                level <= 5 -> "$level"
+                level <= 10 -> "$level"
+                level <= 15 -> "$level"
+                else -> "$level"
+            }
+        }.toTypedArray()
+        val sensAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, sensitivityOptions)
+        sensAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSensitivity.adapter = sensAdapter
+        spinnerSensitivity.setSelection(prefs.getInt("swipe_sensitivity", 5) - 1)
+        spinnerSensitivity.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt("swipe_sensitivity", position + 1).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 버퍼링 모드
+        val bufferModeOptions = arrayOf("안정", "빠른 시작")
+        val bufferAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, bufferModeOptions)
+        bufferAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerBufferMode.adapter = bufferAdapter
+        spinnerBufferMode.setSelection(prefs.getInt("buffer_mode", 0))
+        spinnerBufferMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt("buffer_mode", position).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 시크 모드
+        val seekModeOptions = arrayOf("정확", "빠름")
+        val seekAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, seekModeOptions)
+        seekAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSeekMode.adapter = seekAdapter
+        spinnerSeekMode.setSelection(prefs.getInt("seek_mode", 0))
+        spinnerSeekMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putInt("seek_mode", position).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 캐스팅 방식
+        val castModeOptions = arrayOf("Chromecast", "DLNA")
+        val castAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, castModeOptions)
+        castAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerCastMode.adapter = castAdapter
+        val savedCastMode = prefs.getString("cast_mode", "chromecast") ?: "chromecast"
+        spinnerCastMode.setSelection(if (savedCastMode == "dlna") 1 else 0)
+        spinnerCastMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putString("cast_mode", if (position == 1) "dlna" else "chromecast").apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // 자막 캐시
+        val switchSubtitleCache = dialogView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchSubtitleCache)
+        val cachePathText = dialogView.findViewById<TextView>(R.id.cachePathText)
+        val cacheFileCountText = dialogView.findViewById<TextView>(R.id.cacheFileCountText)
+        val btnClearCache = dialogView.findViewById<android.widget.Button>(R.id.btnClearCache)
+
+        switchSubtitleCache.isChecked = prefs.getBoolean("subtitle_cache_enabled", true)
+        switchSubtitleCache.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("subtitle_cache_enabled", isChecked).apply()
+        }
+
+        // 캐시 정보
+        val cacheDir = File(cacheDir, "converted_subtitles")
+        cachePathText.text = cacheDir.absolutePath
+        val fileCount = cacheDir.listFiles()?.size ?: 0
+        cacheFileCountText.text = "${fileCount}개 파일"
+
+        btnClearCache.setOnClickListener {
+            val count = cacheDir.listFiles()?.size ?: 0
+            if (count == 0) {
+                Toast.makeText(this, "삭제할 캐시 파일이 없습니다", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            AlertDialog.Builder(this)
+                .setTitle("캐시 삭제")
+                .setMessage("${count}개의 변환된 자막 파일을 삭제하시겠습니까?")
+                .setPositiveButton("삭제") { _, _ ->
+                    var deleted = 0
+                    cacheDir.listFiles()?.forEach { if (it.delete()) deleted++ }
+                    Toast.makeText(this, "${deleted}개 파일 삭제 완료", Toast.LENGTH_SHORT).show()
+                    cacheFileCountText.text = "0개 파일"
+                }
+                .setNegativeButton("취소", null)
+                .show()
+        }
+
+        // BottomSheetDialog 생성 (재생시 설정과 동일)
+        val dialog = com.google.android.material.bottomsheet.BottomSheetDialog(
+            this, com.google.android.material.R.style.Theme_Design_BottomSheetDialog
+        )
+        dialog.setContentView(dialogView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            navigationBarColor = android.graphics.Color.parseColor("#1A1A2E")
+        }
+        dialog.behavior.apply {
+            state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            peekHeight = (resources.displayMetrics.heightPixels * 0.8).toInt()
+            skipCollapsed = true
+        }
+
+        // 닫기 버튼
+        dialogView.findViewById<android.widget.ImageButton>(R.id.btnCloseSettings)?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 }

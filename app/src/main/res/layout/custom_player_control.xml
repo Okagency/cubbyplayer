@@ -167,7 +167,7 @@
             android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/exo_position"
+                android:id="@+id/player_position"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
@@ -175,7 +175,7 @@
                 android:minWidth="60dp"
                 android:gravity="center" />
 
-            <androidx.media3.ui.DefaultTimeBar
+            <com.splayer.video.ui.player.SegmentTimeBar
                 android:id="@+id/exo_progress"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -188,7 +188,7 @@
                 app:unplayed_color="@color/unplayed" />
 
             <TextView
-                android:id="@+id/exo_duration"
+                android:id="@+id/player_duration"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@android:color/white"
@@ -247,7 +247,9 @@
                 android:id="@+id/btnSegmentList"
                 android:layout_width="36dp"
                 android:layout_height="36dp"
-                android:src="@android:drawable/ic_menu_sort_by_size"
+                android:src="@drawable/ic_segment_list"
+                android:scaleType="centerInside"
+                android:padding="6dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="구간 리스트" />
 

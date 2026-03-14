@@ -15,6 +15,12 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="설정"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/action_split"
         android:title="추출"
         app:showAsAction="never" />
