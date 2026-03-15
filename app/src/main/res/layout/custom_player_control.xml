@@ -51,23 +51,10 @@
             android:visibility="gone" />
 
         <TextView
-            android:id="@+id/engineToggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="EXO"
-            android:textColor="#FF64B5F6"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:background="#80000000"
-            android:paddingHorizontal="8dp"
-            android:paddingVertical="4dp" />
-
-        <TextView
             android:id="@+id/decoderIndicator"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
+            android:layout_marginEnd="4dp"
             android:text="HW+"
             android:textColor="@android:color/white"
             android:textSize="12sp"
@@ -76,14 +63,26 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="4dp" />
 
+        <TextView
+            android:id="@+id/engineToggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="EXO"
+            android:textColor="#FF64B5F6"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:background="@drawable/bg_engine_toggle_exo"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp" />
+
         <ImageButton
-            android:id="@+id/btnContinuousSegment"
+            android:id="@+id/btnSubtitle"
             style="@style/ExoMediaButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/ic_playlist_play"
-            android:contentDescription="구간연속재생"
-            android:visibility="gone" />
+            android:src="@drawable/ic_subtitles"
+            android:contentDescription="자막 선택" />
 
         <ImageButton
             android:id="@+id/btnCast"
@@ -100,14 +99,6 @@
             android:layout_height="48dp"
             android:src="@drawable/ic_volume_on"
             android:contentDescription="소리 ON/OFF" />
-
-        <ImageButton
-            android:id="@+id/btnSubtitle"
-            style="@style/ExoMediaButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_subtitles"
-            android:contentDescription="자막 선택" />
 
         <ImageButton
             android:id="@+id/btnRotate"

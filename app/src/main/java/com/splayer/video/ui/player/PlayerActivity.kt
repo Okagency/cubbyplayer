@@ -210,7 +210,6 @@ class PlayerActivity : AppCompatActivity() {
     private var btnSegmentEnd: ImageButton? = null
     private var btnSegmentEndAlways: ImageButton? = null  // 구간 시작 후 항상 표시되는 종료 버튼
     private var btnSegmentList: ImageButton? = null  // 구간 리스트 버튼
-    private var btnContinuousSegment: ImageButton? = null  // 구간연속재생 버튼
     private var segmentNavigationLayout: LinearLayout? = null
     private var tvSegmentSequence: TextView? = null
     private var btnSegmentPrevious: ImageButton? = null
@@ -2216,12 +2215,13 @@ class PlayerActivity : AppCompatActivity() {
         val engineAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, engineOptions)
         engineAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerPlayerEngine.adapter = engineAdapter
-        spinnerPlayerEngine.setSelection(if (useVlcEngine) 1 else 0)
+        val savedUseVlc = prefs.getBoolean("use_vlc_engine", false)
+        spinnerPlayerEngine.setSelection(if (savedUseVlc) 1 else 0)
 
         spinnerPlayerEngine.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val newUseVlc = position == 1
-                if (newUseVlc != useVlcEngine) {
+                if (newUseVlc != savedUseVlc) {
                     prefs.edit().putBoolean("use_vlc_engine", newUseVlc).apply()
                     android.widget.Toast.makeText(
                         this@PlayerActivity,
@@ -3959,12 +3959,6 @@ class PlayerActivity : AppCompatActivity() {
                     showSegmentListDialog()
                 }
 
-                // 구간연속재생 버튼 설정 (상단바)
-                btnContinuousSegment = binding.playerView.findViewById(R.id.btnContinuousSegment)
-                btnContinuousSegment?.setOnClickListener {
-                    showContinuousSegmentDialog()
-                }
-
                 // DLNA 캐스트 버튼
                 binding.playerView.findViewById<ImageButton>(R.id.btnCast)?.setOnClickListener {
                     if (isCastingActive) showCastRemoteDialog() else showCastDevicePickerDialog()
@@ -4195,6 +4189,10 @@ class PlayerActivity : AppCompatActivity() {
         toggle.setTextColor(
             if (useVlcEngine) android.graphics.Color.parseColor("#FFFFAB40")  // 앰버
             else android.graphics.Color.parseColor("#FF64B5F6")               // 블루
+        )
+        toggle.setBackgroundResource(
+            if (useVlcEngine) R.drawable.bg_engine_toggle_vlc
+            else R.drawable.bg_engine_toggle_exo
         )
         toggle.setOnClickListener { switchEngine() }
     }
@@ -4477,10 +4475,6 @@ class PlayerActivity : AppCompatActivity() {
         segmentPlaybackToggleButton?.visibility = if (hasCompletedSegments) View.VISIBLE else View.GONE
         btnSegmentList?.visibility = if (hasCompletedSegments) View.VISIBLE else View.GONE
 
-        // 구간연속재생 버튼: 현재 폴더에 구간이 있는 파일이 있을 때만 표시
-        val filesInCurrentFolder = getSegmentFilesInCurrentFolder()
-        btnContinuousSegment?.visibility = if (filesInCurrentFolder.isNotEmpty()) View.VISIBLE else View.GONE
-
         // F를 누른 상태(미완료 구간 있음)
         if (hasIncomplete) {
             btnSegmentStart?.visibility = View.GONE
@@ -4501,85 +4495,6 @@ class PlayerActivity : AppCompatActivity() {
             btnSegmentEnd?.visibility = View.GONE
             btnSegmentEndAlways?.visibility = View.GONE
         }
-    }
-
-    // 현재 폴더에서 구간이 설정된 파일 목록 가져오기
-    private fun getSegmentFilesInCurrentFolder(): List<String> {
-        val currentPath = currentVideoPath ?: externalVideoUri ?: return emptyList()
-
-        // 현재 비디오의 폴더 경로 추출
-        val currentFolder = java.io.File(currentPath).parentFile ?: return emptyList()
-
-        // cubbyplayer.per에 있는 모든 파일명 (완료된 구간만)
-        val allSegments = segmentManager.getAllSegments()
-        val filesWithSegments = allSegments
-            .filter { it.endTime != -1L }  // 완료된 구간만
-            .map { it.fileName }
-            .distinct()
-
-        // 현재 폴더에 실제로 존재하는 파일만 필터링
-        return filesWithSegments.filter { fileName ->
-            val file = java.io.File(currentFolder, fileName)
-            file.exists()
-        }
-    }
-
-    // 구간연속재생 다이얼로그 표시
-    private fun showContinuousSegmentDialog() {
-        val filesInCurrentFolder = getSegmentFilesInCurrentFolder()
-
-        if (filesInCurrentFolder.isEmpty()) {
-            Toast.makeText(this, "현재 폴더에 구간이 설정된 파일이 없습니다", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 파일명을 정렬하여 표시
-        val sortedFiles = filesInCurrentFolder.sorted()
-
-        AlertDialog.Builder(this)
-            .setTitle("구간연속재생 (${sortedFiles.size}개 파일)")
-            .setItems(sortedFiles.toTypedArray()) { _, which ->
-                val selectedFileName = sortedFiles[which]
-                playFileWithSegments(selectedFileName)
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
-    // 선택한 파일의 구간 재생 시작
-    private fun playFileWithSegments(fileName: String) {
-        val currentPath = currentVideoPath ?: externalVideoUri ?: return
-        val currentFolder = java.io.File(currentPath).parentFile ?: return
-        val targetFile = java.io.File(currentFolder, fileName)
-
-        if (!targetFile.exists()) {
-            Toast.makeText(this, "파일을 찾을 수 없습니다: $fileName", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 해당 파일의 구간 로드
-        val segments = segmentManager.getSegmentsForFile(fileName)
-        if (segments.isEmpty()) {
-            Toast.makeText(this, "구간 정보가 없습니다", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 새 파일 재생
-        val uri = Uri.fromFile(targetFile)
-        currentVideoPath = targetFile.absolutePath
-
-        // 구간 재생 모드 활성화
-        currentSegments = segments
-        currentSegmentIndex = 0
-        isSegmentPlaybackEnabled = true
-
-        // 파일 재생 시작 (첫 번째 구간 시작 위치에서)
-        initializePlayer(uri.toString(), segments[0].startTime, fileName)
-
-        updateSegmentPlaybackToggleUI()
-        updateSegmentButtonsVisibility()
-
-        Toast.makeText(this, "구간연속재생: $fileName (${segments.size}개 구간)", Toast.LENGTH_SHORT).show()
     }
 
     // 구간 재생 토글
@@ -5645,10 +5560,6 @@ class PlayerActivity : AppCompatActivity() {
         controller.findViewById<ImageButton>(R.id.btnRotate)?.setOnClickListener {
             toggleOrientation()
         }
-
-        // 구간연속재생 버튼
-        btnContinuousSegment = controller.findViewById(R.id.btnContinuousSegment)
-        btnContinuousSegment?.setOnClickListener { showContinuousSegmentDialog() }
 
         // DLNA 캐스트 버튼 (VLC)
         controller.findViewById<ImageButton>(R.id.btnCast)?.setOnClickListener {
