@@ -1,0 +1,33 @@
+2026/03/30 10:47
+
+[수정 파일]
+app/src/main/java/com/splayer/video/ui/MainActivity.kt
+
+[변경 내용]
+handleExternalVideoIntent() 함수에 SMB 경유 .ts 파일 차단 로직 추가
+
+[상세]
+- URI에 "smb"가 포함되고, URI가 ".ts"로 끝나거나 MIME 타입에 "mp2t"가 포함된 경우 재생 차단
+- "SMB .ts 파일은 지원하지 않습니다." 토스트 메시지 표시 후 finish()
+- 로컬 .ts 파일이나 SMB의 다른 포맷(mp4, mkv 등)은 영향 없음
+
+[사유]
+큐비(탐색기)에서 SMB .ts 파일을 큐플로 전달하면 content provider 경유로 인해
+SmbStreamProvider.openFile이 반복 호출되어 재생 실패 또는 극심한 지연 발생.
+큐비 인앱 플레이어는 직접 SMB 연결이라 문제없으므로, SMB .ts는 큐비 인앱 사용 유도.
+
+[롤백 방법]
+아래 코드 블록을 삭제하면 원복:
+```kotlin
+// SMB 경유 .ts 파일은 지원하지 않음
+val uriString = videoUri.toString()
+val mimeType = intent.type ?: ""
+val isSmbStream = uriString.contains("smb", ignoreCase = true)
+val isTsFile = uriString.endsWith(".ts", ignoreCase = true) ||
+               mimeType.contains("mp2t", ignoreCase = true)
+if (isSmbStream && isTsFile) {
+    Toast.makeText(this, "SMB .ts 파일은 지원하지 않습니다.", Toast.LENGTH_LONG).show()
+    finish()
+    return
+}
+```

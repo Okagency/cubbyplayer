@@ -84,6 +84,18 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Opened with URI: $videoUri")
         CrashLogger.logInfo(this, TAG, "External video opened: $videoUri")
 
+        // SMB 경유 .ts 파일은 지원하지 않음
+        val uriString = videoUri.toString()
+        val mimeType = intent.type ?: ""
+        val isSmbStream = uriString.contains("smb", ignoreCase = true)
+        val isTsFile = uriString.endsWith(".ts", ignoreCase = true) ||
+                       mimeType.contains("mp2t", ignoreCase = true)
+        if (isSmbStream && isTsFile) {
+            Toast.makeText(this, "SMB .ts 파일은 지원하지 않습니다.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
         val subtitleUris = arrayListOf<String>()
         intent.clipData?.let { clip ->
             for (i in 0 until clip.itemCount) {
