@@ -1,0 +1,46 @@
+2026/03/30 11:16
+
+수정 파일: app/proguard-rules.pro
+
+[추가된 ProGuard 규칙]
+
+1. VLC (LibVLC) - JNI 네이티브 호출 보호
+   - keep: org.videolan.libvlc.**, org.videolan.medialibrary.**
+   - 사유: VLC는 JNI로 네이티브 라이브러리 호출하므로 난독화 시 크래시 발생
+
+2. FFmpeg-kit - JNI 네이티브 호출 보호
+   - keep: com.arthenica.ffmpegkit.**, com.arthenica.smartexception.**
+   - 사유: FFmpeg-kit도 JNI 기반이라 클래스명 변경 시 동작 불가
+
+3. Coroutines
+   - keepnames: MainDispatcherFactory, CoroutineExceptionHandler
+   - keepclassmembers: volatile 필드
+   - 사유: 리플렉션으로 디스패처를 찾으므로 이름 보존 필요
+
+4. Room DAO 보강
+   - 기존: RoomDatabase, Entity만 keep
+   - 추가: @Dao, @DatabaseView 어노테이션 클래스 keep
+   - 사유: DAO 인터페이스가 난독화되면 Room 쿼리 실패
+
+5. Google Play Services 전체
+   - keep: com.google.android.gms.** (기존 cast만 있었음)
+   - 사유: Cast 외에도 GMS 내부 리플렉션 사용
+
+6. DataStore
+   - keepclassmembers: protobuf GeneratedMessageLite 필드
+   - 사유: DataStore Preferences 내부 직렬화 보호
+
+7. 앱 모델 클래스 보호
+   - keep: com.splayer.video.data.model.**, com.splayer.video.data.local.entity.**
+   - 사유: Room Entity 및 데이터 클래스 직렬화 보호
+
+[정리]
+- 기존 Room 규칙 중복 제거 (21행 기본 keep + 57~62행 상세 규칙으로 통합)
+
+[롤백 방법]
+- proguard-rules.pro를 아래 내용으로 되돌리면 원복:
+  39~80행 삭제, 21~22행을 아래로 복원:
+  # Room
+  -keep class * extends androidx.room.RoomDatabase
+  -keep @androidx.room.Entity class *
+  -dontwarn androidx.room.paging.**
